@@ -100,11 +100,16 @@ class PongTask:
 
 class CartPoleTask:
     def __init__(self):
-        self.cartpole_env = gym.make("InvertedPendulumMuJoCoEnv-v0")
+        self.cartpole_env = gym.make("Pendulum-v1")
+        self.obs_shape = (3,)
+        self.action_shape = (1,)
     def reset(self):
         return self.cartpole_env.reset()
     def step(self, action):
-        return self.cartpole_env.step(((-1.,), (1.,))[action])
+        o, r, t, _ = self.cartpole_env.step(action)
+        r /= 15
+        r += 1
+        return o, r, t, _
     def render(self):
         return self.cartpole_env.render()
 

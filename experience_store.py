@@ -9,13 +9,16 @@ import util
 # Please note that the buffers receive int32 action indices as input,
 # but produce one-hot encodings corresponding to these indices as output.
 
-class MonteCarloBuffer:
-    def __init__(self, obs_shape, action_count, buffer_size, discount_factor):
+class NStepTDBuffer:
+    def __init__(self, obs_shape, action_shape, t_max, discount_factor, buffer_size=10000):
         self.S_samples = np.zeros((buffer_size,)+obs_shape, dtype=np.float32)
-        self.A_samples = np.zeros((buffer_size,), dtype=np.int32)
-        self.Q_samples = np.zeros((buffer_size,), dtype=np.float32)
+        self.A_samples = np.zeros((buffer_size,)+action_shape, dtype=np.float32)
+        self.R_samples = np.zeros((buffer_size,), dtype=np.float32)
+        self.dt_samples = np.zeros((buffer_size,), dtype=np.int32)
+        self.S2_samples = np.zeros((buffer_size,)+obs_shape, dtype=np.float32)
 
-        self.action_count = action_count
+        self.t_max = t_max
+        self.discount_factor = discount_factor
 
         # buffer_size represents the size of the buffer.
         # cur_index represents the next index that will be written.
@@ -23,8 +26,6 @@ class MonteCarloBuffer:
         self.buffer_size = buffer_size
         self.cur_index = 0
         self.filled = False
-
-        self.discount_factor = discount_factor
 
         self.episode_buffer = []
 
@@ -44,18 +45,35 @@ class MonteCarloBuffer:
 
         # discard unusable information ASAP
         if trajectory_length > self.buffer_size:
+            print(f"WARNING: experience buffer overflow (trajectory length {trajectory_length}, buffer size {self.buffer_size}). Clipping beginning of trajectory.")
             observations = observations[-self.buffer_size:]
             actions = actions[-self.buffer_size:]
             rewards = rewards[-self.buffer_size:]
             trajectory_length = self.buffer_size
 
+        t_max = self.t_max
+        if t_max <= 0:
+            t_max = trajectory_length
+
         # calculate trajectory rewards for each timestep
         # (ensure double precision for this calculation)
         traj_rewards = np.array(rewards, dtype=np.float64)
-        for offset in range(1, trajectory_length):
+        for offset in range(1, min(trajectory_length, t_max)):
             traj_rewards[:-offset] += rewards[offset:] * self.discount_factor**offset
         traj_rewards = np.float32(traj_rewards)
         # print(traj_rewards)
+
+        if trajectory_length <= t_max:
+            dt = np.zeros(trajectory_length, dtype=np.int32)
+            s2 = observations
+        else:
+            dt_incomplete = np.full(trajectory_length - t_max, t_max, dtype=np.int32)
+            dt_complete = np.zeros(t_max, dtype=np.int32)
+            dt = np.concatenate([dt_incomplete, dt_complete], axis=0)
+
+            s2_incomplete = observations[t_max:]
+            s2_complete = np.zeros_like(observations[:trajectory_length - t_max])
+            s2 = np.concatenate([s2_incomplete, s2_complete], axis=0)
 
         # store the trajectory in the buffer
         # (split based on whether we will wrap around the end of the buffer)
@@ -64,13 +82,17 @@ class MonteCarloBuffer:
             can_store = self.buffer_size - self.cur_index
             self.S_samples[self.cur_index:] = observations[:can_store]
             self.A_samples[self.cur_index:] = actions[:can_store]
-            self.Q_samples[self.cur_index:] = traj_rewards[:can_store]
+            self.R_samples[self.cur_index:] = traj_rewards[:can_store]
+            self.dt_samples[self.cur_index:] = dt[:can_store]
+            self.S2_samples[self.cur_index:] = s2[:can_store]
 
             leftover = trajectory_length - can_store
             if leftover:
                 self.S_samples[:leftover] = observations[can_store:]
                 self.A_samples[:leftover] = actions[can_store:]
-                self.Q_samples[:leftover] = traj_rewards[can_store:]
+                self.R_samples[:leftover] = traj_rewards[can_store:]
+                self.dt_samples[:leftover] = dt[can_store:]
+                self.S2_samples[:leftover] = s2[can_store:]
 
             self.filled = True
             self.cur_index = (self.cur_index + trajectory_length) - self.buffer_size
@@ -79,7 +101,9 @@ class MonteCarloBuffer:
 
             self.S_samples[self.cur_index:new_index] = observations
             self.A_samples[self.cur_index:new_index] = actions
-            self.Q_samples[self.cur_index:new_index] = traj_rewards
+            self.R_samples[self.cur_index:new_index] = traj_rewards
+            self.dt_samples[self.cur_index:new_index] = dt
+            self.S2_samples[self.cur_index:new_index] = s2
 
             self.cur_index = new_index
 
@@ -96,109 +120,15 @@ class MonteCarloBuffer:
             self.store_episode(all_S, all_A, all_R)
             self.episode_buffer = []
 
-    def sample_target_values(self, batch_size, rng):
-        ''' samples `batch_size` samples using the numpy random generator `rng`.
-
-            returns them as a tuple (observations, actions, qualities),
-            where actions is now one-hot encoded. '''
-
+    def report(self):
         if self.filled:
-            limit_index = self.buffer_size
+            return (self.S_samples, self.A_samples, self.R_samples, self.dt_samples, self.S2_samples)
         else:
-            limit_index = self.cur_index
-
-        sample_indices = rng.integers(limit_index, size=(batch_size))
-
-        return self.S_samples[sample_indices], self.A_samples[sample_indices], self.Q_samples[sample_indices]
+            return (self.S_samples[:self.cur_index], self.A_samples[:self.cur_index], self.R_samples[:self.cur_index],
+                self.dt_samples[:self.cur_index], self.S2_samples[:self.cur_index])
 
     def clear(self):
         self.cur_index = 0
         self.filled = False
 
         self.episode_buffer = []
-
-
-class TD0Buffer:
-    def __init__(self, obs_shape, action_count, buffer_size):
-        self.S_samples = np.zeros((buffer_size,)+obs_shape, dtype=np.float32)
-        self.A_samples = np.zeros((buffer_size,), dtype=np.int32)
-        self.R_samples = np.zeros((buffer_size,), dtype=np.float32)
-        self.T_samples = np.zeros((buffer_size,), dtype=bool)
-
-        self.action_count = action_count
-
-        # buffer_size represents the size of the buffer.
-        # cur_index represents the next index that will be written.
-        # filled represents whether the buffer has been filled at least once (can be sampled freely).
-        self.buffer_size = buffer_size
-        self.cur_index = 0
-        self.filled = False
-
-    def store(self, obs, action, reward, terminal):
-        ''' store should be called every timestep.
-
-
-            - obs should be a float32 array whose axes match obs_shape.
-            - action should be an int or int32.
-            - reward should be a float32.
-            - terminal should be a boolean.
-
-            Unless terminal was True for the last call to store,
-            this sample must correspond to the timestep immediately
-            following the sample passed to the last call. '''
-
-        self.S_samples[self.cur_index] = obs
-        self.A_samples[self.cur_index] = action
-        self.R_samples[self.cur_index] = reward
-        self.T_samples[self.cur_index] = terminal
-
-        self.cur_index += 1
-
-        if self.cur_index == self.buffer_size:
-            self.filled = True
-            self.cur_index = 0
-
-    def sample_SARTS2(self, batch_size, rng):
-        ''' Samples `batch_size` samples using the numpy random generator `rng`.
-
-            Returns them as a tuple (observations, actions, rewards, terminals, next observations),
-            where actions is now one-hot encoded.
-
-            Refuses to return the most recently stored tuple (since there is nothing to follow it) unless it was terminal.
-            Remember not to interpret next observation if terminal flag was set. '''
-
-        if not self.T_samples[self.cur_index-1]:
-            avoid_last_stored_sample = True
-        else:
-            avoid_last_stored_sample = False
-
-        # the strategy for avoiding the last stored sample is as follows:
-        # just don't generate it, if we have not looped.
-        # if have, then add 1 to all indices at or above it to avoid it.
-
-        if self.filled and avoid_last_stored_sample:
-            limit_index = self.buffer_size - 1
-        elif self.filled:
-            limit_index = self.buffer_size
-        elif avoid_last_stored_sample:
-            limit_index = self.cur_index - 1
-        else:
-            limit_index = self.cur_index
-
-        if limit_index > 0:
-            sample_indices = rng.integers(limit_index, size=(batch_size))
-        else:
-            sample_indices = np.zeros((0,), dtype=np.int32)
-
-        if self.filled and avoid_last_stored_sample and self.cur_index != 0:
-            sample_indices = np.where(sample_indices >= self.cur_index - 1, sample_indices + 1, sample_indices)
-
-        # construct the indices for S2 by adding 1 to the existing sample indices, being sure to wrap around.
-        next_indices = np.where(sample_indices == self.buffer_size - 1, 0, sample_indices + 1)
-
-        return self.S_samples[sample_indices], self.A_samples[sample_indices], \
-            self.R_samples[sample_indices], self.T_samples[sample_indices], self.S_samples[next_indices]
-
-    def clear(self):
-        self.cur_index = 0
-        self.filled = False

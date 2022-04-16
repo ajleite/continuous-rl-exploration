@@ -1,120 +1,256 @@
 import numpy as np
+import scipy.special
+import tensorflow as tf
 
 import experience_store
-import util
 
 
-class BaseAgent:
-    def __init__(self, rng, action_count, Q_network, experience_buffer, training_samples_per_experience_step, minibatch_size, experience_period_length, target_Q_network_update_rate):
+class AdvantageAgent:
+    def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence):
         self.rng = rng
 
-        self.action_count = action_count
-        self.possible_actions = np.arange(self.action_count)
+        self.actor_count = actor_count
 
-        self.Q_network = Q_network
-        self.target_Q_network = self.Q_network.zero_like()
-        self.target_Q_network_update_rate = target_Q_network_update_rate
+        self.policy_network = policy_network
+        self.value_network = value_network
 
-        self.experience_buffer = experience_buffer
+        self.t_max = t_max
+        self.discount_factor = discount_factor
+        self.stoch_persistence = stoch_persistence
 
-        self.training_samples_per_experience_step = training_samples_per_experience_step
-        self.minibatch_size = minibatch_size
-        self.experience_period_length = experience_period_length
-
-        self.experience_period_step = 0
-
+        self.beta_entropy_weight = 0.8
+        self.minibatch_size = 128
         self.use_tqdm = False
 
-    def sample_target_values(self, minibatch_size):
-        raise NotImplementedError()
+        self.obs_shape = self.policy_network.obs_shape
+        self.action_shape = self.policy_network.action_shape
+        self.action_modes = self.policy_network.action_modes
 
-    def act(self, obs, epsilon=0.1):
-        if epsilon and self.rng.random() < epsilon:
-            return self.rng.integers(self.action_count)
+        self.stoch_mode_t = self.rng.random((self.actor_count,) + self.action_shape)
+        self.stoch_gauss_t = self.rng.random((self.actor_count,) + self.action_shape)
+        # this is a prominent term in the Gaussian quantile formula, precomputed for efficiency
+        self.stoch_gauss_inverf = np.sqrt(2) * scipy.special.erfinv(2 * self.stoch_gauss_t - 1)
 
-        return np.array(self.Q_network.apply_A(np.expand_dims(obs, axis=0))[0])
+        self.experience_buffer = [experience_store.NStepTDBuffer(self.obs_shape, self.action_shape, self.t_max, self.discount_factor) for _ in range(self.actor_count)]
 
-    def store(self, obs, action, reward, terminal):
-        self.experience_buffer.store(obs, action, reward, terminal)
-        self.experience_period_step += 1
+    def act(self, obs, actor=0):
+        if self.rng.random() > self.stoch_persistence:
+            self.stoch_mode_t[actor] = self.rng.random(self.action_shape)
+            self.stoch_gauss_t[actor] = self.rng.random(self.action_shape)
+            self.stoch_gauss_inverf[actor] = np.sqrt(2) * scipy.special.erfinv(2 * self.stoch_gauss_t[actor] - 1)
 
-        if self.experience_period_step == self.experience_period_length:
-            total_training_samples = self.training_samples_per_experience_step * self.experience_period_length
-            num_minibatches =  total_training_samples // self.minibatch_size
-            last_minibatch_size = total_training_samples % self.minibatch_size
+        # shape: self.action_shape + (self.action_modes, 3), where the inner three values are the weight, mean, and standard deviation for each mode
+        output = np.array(self.policy_network.apply(np.expand_dims(obs, axis=0))[0])
+        weights = output[..., 0]
+        means = output[..., 1]
+        pre_stdevs = output[..., 2]
 
-            total_loss = 0
+        # this is the formula for the sigmoid function
+        stdevs = 1/(1 + np.exp(pre_stdevs))
 
-            if self.use_tqdm:
-                import tqdm
-                minibatches = tqdm.tqdm(range(num_minibatches))
-            else:
-                minibatches = range(num_minibatches)
+        softmax_weights = np.exp(weights) / np.sum(np.exp(weights), axis=-1)
 
-            for _ in minibatches:
-                S, A, Q = self.sample_target_values(self.minibatch_size)
-                if S.size > 0:
-                    total_loss += self.Q_network.fit(S, A, Q)
-                    # print(num_minibatches, _, total_loss)
+        cum_weights = np.cumsum(softmax_weights, axis=-1)
+        sel_mode = np.argmax(self.stoch_mode_t[actor] < cum_weights, axis=-1, keepdims=True)
 
-            if last_minibatch_size:
-                S, A, Q = self.sample_target_values(last_minibatch_size)
-                if S.size > 0:
-                    total_loss += self.Q_network.fit(S, A, Q)
+        sel_means = np.squeeze(np.take_along_axis(means, sel_mode, axis=-1), axis=-1)
+        sel_stdevs = np.squeeze(np.take_along_axis(stdevs, sel_mode, axis=-1), axis=-1)
 
-            # if S.size > 0:
-            #     print(S[0], A[0], Q[0])
-            mean_loss = np.sqrt(np.array(total_loss)) / total_training_samples
+        # this is the quantile formula of the Gaussian distribution
+        sel_actions = sel_means + sel_stdevs * self.stoch_gauss_inverf[actor]
 
-            if self.target_Q_network_update_rate:
-                total_target_update = 1 - (1-self.target_Q_network_update_rate)**total_training_samples
-                self.target_Q_network.copy_from(self.Q_network, amount=total_target_update)
+        return sel_actions
 
-            # print(self.Q_network.keras_network(np.linspace(-1, 1, 11).reshape(-1, 1)))
+    @tf.function
+    def log_prob_actions(self, obss, actions):
+        # take the weighted probability of each coordinate of each action over modes,
+        #   then transform into log space and add over coordinates
+        # maintains the batch axis
 
-            self.experience_period_step = 0
+        # shape: (n,) + self.action_shape + (self.action_modes, 3)
+        outputs = self.policy_network.apply(obss)
+        weights = outputs[..., 0]
+        means = outputs[..., 1]
+        pre_stdevs = outputs[..., 2]
 
-            return mean_loss
+        stdevs = tf.nn.sigmoid(pre_stdevs)
 
-        return None
+        softmax_weights = tf.nn.softmax(weights, axis=-1)
 
-class MonteCarloAgent(BaseAgent):
-    def __init__(self, rng, obs_shape, action_count, Q_network, discount_factor, experience_buffer_size, training_samples_per_experience_step, minibatch_size, experience_period_length):
-        experience_buffer = experience_store.MonteCarloBuffer(obs_shape, action_count, experience_buffer_size, discount_factor)
-        target_Q_network_update_rate = 0
-        BaseAgent.__init__(self, rng, action_count, Q_network, experience_buffer, training_samples_per_experience_step, minibatch_size, experience_period_length, target_Q_network_update_rate)
+        # want to get the PDF of each real action in each of the modes
+        # this is the PDF formula of the Gaussian distribution
+        mode_PDFs = tf.exp(-0.5 * ((means - actions) / stdevs)**2) / (stdevs * np.sqrt(2*np.pi))
 
-    def sample_target_values(self, minibatch_size):
-        vals = self.experience_buffer.sample_target_values(minibatch_size, self.rng)
-        # print(vals[2][0])
-        return vals
+        # take the weighted average over modes to get the probability of each coordinate of each action
+        weighted_PDF = tf.reduce_sum(softmax_weights * mode_PDFs, axis=-1)
+        log_PDF = tf.math.log(weighted_PDF)
 
+        # add in log space to get joint probability of all action coordinates, keeping the batch axis 0
+        total_log_PDF = tf.reduce_sum(log_PDF, axis=range(1, len(log_PDF.shape)))
 
-def get_TD0_target_values(S, A, R, T, S2, target_V_function, discount_factor):
-    ''' Used to get a target value for the TD0 algorithm. '''
+        return total_log_PDF
 
-    sample_count = S.shape[0]
+    @tf.function
+    def action_entropies(self, obss):
+        # Gets the entropy of the action distribution for each observation.
+        # Unfortunately, I did not have time to find an analytic solution
+        #   to the problem of finding the entropy of the mixture-of-Gaussians
+        #   distribution. This is an open problem as described in
+        #   https://isas.iar.kit.edu/pdf/MFI08_HuberBailey.pdf.
+        # I have some novel techniques for describing the information theory
+        #   of continuous random variables but I don't know if they will apply
+        #   here.
+        # Instead, I take the approach of overestimating entropy by assuming
+        #   zero overlap between the component distributions.
 
-    ## generate the Q2 values
-    Q2 = np.array(target_V_function(S2))
+        # shape: (n,) + self.action_shape + (self.action_modes, 3)
+        outputs = self.policy_network.apply(obss)
+        weights = outputs[..., 0]
+        pre_stdevs = outputs[..., 2]
+        stdevs = tf.nn.sigmoid(pre_stdevs)
 
-    # set the future reward to 0 when the transition is terminal
-    Q2 = np.where(T, 0, Q2)
+        # By my bag-of-tricks theorem (there is probably a better name for it somewhere),
+        #   the entropy of a discrete mixture of RVs, selected according to some index RV
+        #   X, is equal to to entropy of X plus the expected entropy of the selected RV.
+        # Do not worry about the fact that I am mixing differential and discrete entropies.
+        #   In my work unifying discrete and continuous information theory, I have shown
+        #   that differential entropy is the finite deviation, in bits or nats, between the infinite
+        #   entropies of your continuous random variable of interest and the unit uniform
+        #   random variable of the same dimension.
+        # So differential entropy and discrete entropy have the same units - nats - and all is well.
 
-    ## apply the Bellman equation to derive the target Q1 values
-    return R + discount_factor * Q2
+        mode_entropies = 0.5 * tf.math.log(2 * np.pi * stdevs**2) + 0.5
 
-class TD0Agent(BaseAgent):
-    def __init__(self, rng, obs_shape, action_count, Q_network, discount_factor, experience_buffer_size, training_samples_per_experience_step, minibatch_size, experience_period_length, target_Q_network_update_rate):
-        experience_buffer = experience_store.TD0Buffer(obs_shape, action_count, experience_buffer_size)
-        self.discount_factor = discount_factor
-        BaseAgent.__init__(self, rng, action_count, Q_network, experience_buffer, training_samples_per_experience_step, minibatch_size, experience_period_length, target_Q_network_update_rate)
-
-    def sample_target_values(self, minibatch_size):
-        S, A, R, T, S2 = self.experience_buffer.sample_SARTS2(minibatch_size, self.rng)
-        if S.size > 0:
-            Q = get_TD0_target_values(S, A, R, T, S2, self.target_Q_network.apply_V, self.discount_factor)
+        if self.action_modes > 1:
+            softmax_weights = tf.nn.softmax(weights, axis=-1)
+            weight_entropy_terms = -tf.math.log(softmax_weights)
+            coordinate_entropies = tf.reduce_sum(softmax_weights * (weight_entropy_terms + mode_entropies), axis=-1)
         else:
-            Q = np.zeros((), dtype=np.float32)
+            coordinate_entropies = tf.reduce_sum(mode_entropies, axis=-1)
 
-        return S, A, Q
+        # now we add the entropy of each coordinate since they are independent in this version.
+        total_entropies = tf.reduce_sum(coordinate_entropies, axis=range(1, len(coordinate_entropies.shape)))
+
+        return total_entropies
+
+    def store(self, actor, obs, action, reward, terminal):
+        self.experience_buffer[actor].store(obs, action, reward, terminal)
+
+    @tf.function
+    def train_iter(self, S, A, R):
+        cur_value = self.value_network.apply(S)
+        adv = R - cur_value
+
+        log_prob_actions = self.log_prob_actions(S, A)
+        action_entropies = self.action_entropies(S)
+        obj = tf.reduce_sum(log_prob_actions * adv + self.beta_entropy_weight * action_entropies)
+
+        obj_gradient = tf.gradients(-obj, self.policy_network.keras_network.weights)
+        self.policy_network.optimizer.apply_gradients(zip(obj_gradient, self.policy_network.keras_network.weights))
+
+        value_loss = tf.reduce_sum(adv ** 2)
+        value_gradient = tf.gradients(value_loss, self.value_network.keras_network.weights)
+        self.value_network.optimizer.apply_gradients(zip(value_gradient, self.value_network.keras_network.weights))
+
+        return obj, value_loss
+
+    def train(self, epochs=1):
+        all_S = []
+        all_A = []
+        all_R = []
+        # S2 and dt are used for the TD updates.
+        # S2 is the state after all short-term reward has been received.
+        # dt is the number of timesteps separating S from S2.
+        # If dt is 0, then S2 is full of garbage values because the episode ended.
+        all_dt = []
+        all_S2 = []
+
+        for buffer in self.experience_buffer:
+            S, A, R, dt, S2 = buffer.report()
+            buffer.clear()
+
+            all_S.append(S)
+            all_A.append(A)
+            all_R.append(R)
+            all_dt.append(dt)
+            all_S2.append(S2)
+
+        all_S = np.concatenate(all_S, axis=0)
+        all_A = np.concatenate(all_A, axis=0)
+        all_R = np.concatenate(all_R, axis=0)
+        all_dt = np.concatenate(all_dt, axis=0)
+        all_S2 = np.concatenate(all_S2, axis=0)
+
+        init_pred_R = np.array(self.value_network.apply(all_S2))
+
+        # map them onto the ring
+        y, x, omega = all_S[..., 0], all_S[..., 1], all_S[..., 2]
+        theta = np.arctan2(y, x)
+        import matplotlib.pyplot as plt
+        plt.subplot(1, 3, 1)
+        plt.scatter(theta, omega, c=all_R)
+        plt.colorbar()
+        plt.subplot(1, 3, 2)
+        plt.scatter(theta, omega, c=init_pred_R)
+        plt.colorbar()
+
+        terminal = (all_dt == 0)
+
+        # use TD to estimate the total (short-term + long-term) expected reward
+        if not np.all(terminal):
+            all_R = np.where(terminal, all_R, all_R + self.discount_factor ** all_dt * np.array(self.value_network.apply(all_S2)))
+        del all_dt
+        # del all_S2
+
+        total_training_samples = all_S.shape[0]
+        num_minibatches = (total_training_samples * epochs) // self.minibatch_size
+        last_minibatch_size = (total_training_samples * epochs) % self.minibatch_size
+
+        total_obj = 0
+        total_value_loss = 0
+
+        if self.use_tqdm:
+            import tqdm
+            minibatches = tqdm.tqdm(range(num_minibatches))
+        else:
+            minibatches = range(num_minibatches)
+
+        for _ in minibatches:
+            sample_indices = self.rng.integers(total_training_samples, size=(self.minibatch_size))
+            S = all_S[sample_indices]
+            A = all_A[sample_indices]
+            R = all_R[sample_indices]
+            if S.size > 0:
+                obj, value_loss = self.train_iter(S, A, R)
+                total_obj += obj
+                total_value_loss += value_loss
+
+        if last_minibatch_size:
+            sample_indices = self.rng.integers(total_training_samples, size=(last_minibatch_size))
+            S = all_S[sample_indices]
+            A = all_A[sample_indices]
+            R = all_R[sample_indices]
+            if S.size > 0:
+                obj, value_loss = self.train_iter(S, A, R)
+                total_obj += obj
+                total_value_loss += value_loss
+
+        value_rmse = np.sqrt(np.array(total_value_loss) / total_training_samples / epochs)
+        mean_obj = np.array(total_obj) / total_training_samples / epochs
+
+        final_pred_R = np.array(self.value_network.apply(all_S2))
+
+        plt.subplot(1, 3, 3)
+        plt.scatter(theta, omega, c=final_pred_R)
+        plt.colorbar()
+        plt.show()
+
+        print(self.policy_network.keras_network.weights)
+
+        # if self.target_Q_network_update_rate:
+        #     total_target_update = 1 - (1-self.target_Q_network_update_rate)**total_training_samples
+        #     self.target_Q_network.copy_from(self.Q_network, amount=total_target_update)
+
+        # print(self.Q_network.keras_network(np.linspace(-1, 1, 11).reshape(-1, 1)))
+
+        return value_rmse, mean_obj
