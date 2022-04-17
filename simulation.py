@@ -36,11 +36,17 @@ class Simulation:
                 total_r = 0
 
                 last_a = None
-                hold_steps = 0
+                ep_length = 0
                 while not t:
-                    a = self.agent.act(s, traj)
+                    if n % 10:
+                        a = self.agent.act(s, traj)
+                    else:
+                        a = self.agent.act(s, traj, greedy=True)
 
                     s2, r, t, _ = self.task.step(a)
+                    ep_length += 1
+                    if ep_length == 1000:
+                        t = True
                     self.agent.store(traj, s, a, r, t)
                     s = s2
 
@@ -52,13 +58,14 @@ class Simulation:
                             print('episode', n, 'last episode:', 'reward', self.episode_rewards[-1], 'loss', self.loss_samples[-1], 'entropy', self.episode_behavior_entropy[-1])
                         self.save_trace()
 
-                    if render:
+                    if render and traj == 0:
                         self.task.render()
 
-                continue
 
                 # episode is over, record it
                 self.episode_rewards.append((timestep, total_r))
+                print((n, ep_length, total_r))
+                continue
 
                 # calculate behavior entropy
                 total_actions = n_left + n_right

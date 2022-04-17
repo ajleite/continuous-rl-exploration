@@ -4,6 +4,8 @@ import tensorflow as tf
 
 import experience_store
 
+debug_plot_values = False
+debug_print_action_calc = False
 
 class AdvantageAgent:
     def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence):
@@ -18,7 +20,7 @@ class AdvantageAgent:
         self.discount_factor = discount_factor
         self.stoch_persistence = stoch_persistence
 
-        self.beta_entropy_weight = 0.8
+        self.beta_entropy_weight = 0
         self.minibatch_size = 128
         self.use_tqdm = False
 
@@ -33,7 +35,7 @@ class AdvantageAgent:
 
         self.experience_buffer = [experience_store.NStepTDBuffer(self.obs_shape, self.action_shape, self.t_max, self.discount_factor) for _ in range(self.actor_count)]
 
-    def act(self, obs, actor=0):
+    def act(self, obs, actor=0, greedy=False):
         if self.rng.random() > self.stoch_persistence:
             self.stoch_mode_t[actor] = self.rng.random(self.action_shape)
             self.stoch_gauss_t[actor] = self.rng.random(self.action_shape)
@@ -42,13 +44,15 @@ class AdvantageAgent:
         # shape: self.action_shape + (self.action_modes, 3), where the inner three values are the weight, mean, and standard deviation for each mode
         output = np.array(self.policy_network.apply(np.expand_dims(obs, axis=0))[0])
         weights = output[..., 0]
-        means = output[..., 1]
+        pre_means = output[..., 1]
         pre_stdevs = output[..., 2]
 
-        # this is the formula for the sigmoid function
-        stdevs = 1/(1 + np.exp(pre_stdevs))
-
         softmax_weights = np.exp(weights) / np.sum(np.exp(weights), axis=-1)
+
+        means = np.clip(pre_means, -1, 1)
+
+        # this is the formula for the sigmoid function
+        stdevs = 1/(1 + np.exp(pre_stdevs))+0.0001
 
         cum_weights = np.cumsum(softmax_weights, axis=-1)
         sel_mode = np.argmax(self.stoch_mode_t[actor] < cum_weights, axis=-1, keepdims=True)
@@ -56,8 +60,18 @@ class AdvantageAgent:
         sel_means = np.squeeze(np.take_along_axis(means, sel_mode, axis=-1), axis=-1)
         sel_stdevs = np.squeeze(np.take_along_axis(stdevs, sel_mode, axis=-1), axis=-1)
 
+        if greedy:
+            sel_actions = sel_means
         # this is the quantile formula of the Gaussian distribution
-        sel_actions = sel_means + sel_stdevs * self.stoch_gauss_inverf[actor]
+        else:
+            sel_actions = sel_means + sel_stdevs * self.stoch_gauss_inverf[actor]
+
+        if actor == 0 and debug_print_action_calc:
+            print(self.stoch_mode_t[actor])
+            for i in range(self.action_modes):
+                print(softmax_weights[..., i], means[..., i], stdevs[..., i], "*" if (sel_mode == i).all() else "")
+            print(self.stoch_gauss_t[actor])
+            print(sel_actions)
 
         return sel_actions
 
@@ -70,19 +84,21 @@ class AdvantageAgent:
         # shape: (n,) + self.action_shape + (self.action_modes, 3)
         outputs = self.policy_network.apply(obss)
         weights = outputs[..., 0]
-        means = outputs[..., 1]
+        pre_means = outputs[..., 1]
         pre_stdevs = outputs[..., 2]
 
-        stdevs = tf.nn.sigmoid(pre_stdevs)
-
         softmax_weights = tf.nn.softmax(weights, axis=-1)
+
+        means = tf.clip_by_value(pre_means, -1, 1)
+
+        stdevs = tf.nn.sigmoid(pre_stdevs)+0.0001
 
         # want to get the PDF of each real action in each of the modes
         # this is the PDF formula of the Gaussian distribution
         mode_PDFs = tf.exp(-0.5 * ((means - actions) / stdevs)**2) / (stdevs * np.sqrt(2*np.pi))
 
         # take the weighted average over modes to get the probability of each coordinate of each action
-        weighted_PDF = tf.reduce_sum(softmax_weights * mode_PDFs, axis=-1)
+        weighted_PDF = tf.reduce_sum(softmax_weights * mode_PDFs, axis=-1)+0.0001
         log_PDF = tf.math.log(weighted_PDF)
 
         # add in log space to get joint probability of all action coordinates, keeping the batch axis 0
@@ -106,8 +122,11 @@ class AdvantageAgent:
         # shape: (n,) + self.action_shape + (self.action_modes, 3)
         outputs = self.policy_network.apply(obss)
         weights = outputs[..., 0]
+        pre_means = outputs[..., 1]
         pre_stdevs = outputs[..., 2]
-        stdevs = tf.nn.sigmoid(pre_stdevs)
+        stdevs = tf.nn.sigmoid(pre_stdevs)+0.0001
+
+        means = tf.clip_by_value(pre_means, -1, 1)
 
         # By my bag-of-tricks theorem (there is probably a better name for it somewhere),
         #   the entropy of a discrete mixture of RVs, selected according to some index RV
@@ -121,10 +140,13 @@ class AdvantageAgent:
 
         mode_entropies = 0.5 * tf.math.log(2 * np.pi * stdevs**2) + 0.5
 
+        # Because of clipping at +/-1, the above formula isn't quite right. Penalize means near +/- 1.
+        mode_entropies -= means**4
+
         if self.action_modes > 1:
             softmax_weights = tf.nn.softmax(weights, axis=-1)
             weight_entropy_terms = -tf.math.log(softmax_weights)
-            coordinate_entropies = tf.reduce_sum(softmax_weights * (weight_entropy_terms + mode_entropies), axis=-1)
+            coordinate_entropies = tf.reduce_sum(tf.math.multiply_no_nan(weight_entropy_terms + mode_entropies, softmax_weights), axis=-1)
         else:
             coordinate_entropies = tf.reduce_sum(mode_entropies, axis=-1)
 
@@ -181,18 +203,8 @@ class AdvantageAgent:
         all_dt = np.concatenate(all_dt, axis=0)
         all_S2 = np.concatenate(all_S2, axis=0)
 
-        init_pred_R = np.array(self.value_network.apply(all_S2))
-
-        # map them onto the ring
-        y, x, omega = all_S[..., 0], all_S[..., 1], all_S[..., 2]
-        theta = np.arctan2(y, x)
-        import matplotlib.pyplot as plt
-        plt.subplot(1, 3, 1)
-        plt.scatter(theta, omega, c=all_R)
-        plt.colorbar()
-        plt.subplot(1, 3, 2)
-        plt.scatter(theta, omega, c=init_pred_R)
-        plt.colorbar()
+        if debug_plot_values:
+            init_pred_R = np.array(self.value_network.apply(all_S2))
 
         terminal = (all_dt == 0)
 
@@ -238,14 +250,24 @@ class AdvantageAgent:
         value_rmse = np.sqrt(np.array(total_value_loss) / total_training_samples / epochs)
         mean_obj = np.array(total_obj) / total_training_samples / epochs
 
-        final_pred_R = np.array(self.value_network.apply(all_S2))
+        if debug_plot_values:
+            # map them onto the ring
+            theta, omega = all_S[..., 2], all_S[..., 3]
 
-        plt.subplot(1, 3, 3)
-        plt.scatter(theta, omega, c=final_pred_R)
-        plt.colorbar()
-        plt.show()
+            import matplotlib.pyplot as plt
+            plt.subplot(1, 3, 1)
+            plt.scatter(theta, omega, c=all_R)
+            plt.colorbar()
+            plt.subplot(1, 3, 2)
+            plt.scatter(theta, omega, c=init_pred_R)
+            plt.colorbar()
 
-        print(self.policy_network.keras_network.weights)
+            final_pred_R = np.array(self.value_network.apply(all_S2))
+
+            plt.subplot(1, 3, 3)
+            plt.scatter(theta, omega, c=final_pred_R)
+            plt.colorbar()
+            plt.show()
 
         # if self.target_Q_network_update_rate:
         #     total_target_update = 1 - (1-self.target_Q_network_update_rate)**total_training_samples

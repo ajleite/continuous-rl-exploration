@@ -194,15 +194,15 @@ def test_trivial(seed):
     agent_rng = np.random.default_rng(seed)
     task_rng = np.random.default_rng(seed+234579672983459873)
 
-    task = tasks.CartPoleTask()
+    task = tasks.CartPoleTask(task_rng)
 
     # expected time to switch action distribution is 20 timesteps
     policy_network = network.Network(task.obs_shape, network.FFANN_factory([40, 20]), 0.0001, True, task.action_shape, 1)
     value_network = network.Network(task.obs_shape, network.FFANN_factory([40, 20]), 0.0001, False, task.action_shape, 1)
-    ag = agent.AdvantageAgent(agent_rng, 16, policy_network, value_network, 0, 0.95, 0.965)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.95, 0.965)
 
-    sim = simulation.Simulation(ag, task, 100)
-    sim.run()
+    sim = simulation.Simulation(ag, task, 10000)
+    sim.run(False)
 
 if __name__ == '__main__':
     test_trivial(0)
