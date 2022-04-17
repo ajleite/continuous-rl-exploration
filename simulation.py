@@ -9,12 +9,14 @@ class Simulation:
 
         self.num_episodes = num_episodes
 
-        self.loss_samples = []
-        self.episode_rewards = []
-        self.episode_behavior_entropy = []
+        self.training_episode_rewards = []
+        self.eval_episode_rewards = []
 
-        # self.best_weights = None
-        # self.best_100_episode_return = None
+        self.value_rmse = []
+        self.mean_obj = []
+
+        self.best_weights = None
+        self.best_100_episode_return = None
         self.path = path
 
     def save_trace(self):
@@ -22,7 +24,8 @@ class Simulation:
             return
 
         to_save = {'best_weights': self.best_weights, 'best_100_episode_return': self.best_100_episode_return,
-            'episode_rewards': self.episode_rewards, 'loss_samples': self.loss_samples, 'episode_behavior_entropy': self.episode_behavior_entropy}
+            'training_episode_rewards': self.training_episode_rewards, 'eval_episode_rewards': self.eval_episode_rewards,
+            'value_rmse': self.value_rmse, 'mean_obj': self.mean_obj}
 
         pickle.dump(to_save, open(self.path,'wb'))
 
@@ -30,67 +33,69 @@ class Simulation:
         timestep = 0
 
         for n in range(self.num_episodes):
+            # 1. gather training trajectories
+            training_rewards = []
+            training_lengths = []
+
             for traj in range(self.agent.actor_count):
                 s = self.task.reset()
                 t = False
-                total_r = 0
 
-                last_a = None
-                ep_length = 0
                 while not t:
-                    if n % 10:
-                        a = self.agent.act(s, traj)
-                    else:
-                        a = self.agent.act(s, traj, greedy=True)
+                    a = self.agent.act(s, traj)
 
                     s2, r, t, _ = self.task.step(a)
-                    ep_length += 1
-                    if ep_length == 1000:
-                        t = True
                     self.agent.store(traj, s, a, r, t)
                     s = s2
 
-                    total_r += r
                     timestep += 1
-
-                    if timestep % 2000 == 0:
-                        if self.episode_rewards and self.loss_samples:
-                            print('episode', n, 'last episode:', 'reward', self.episode_rewards[-1], 'loss', self.loss_samples[-1], 'entropy', self.episode_behavior_entropy[-1])
-                        self.save_trace()
 
                     if render and traj == 0:
                         self.task.render()
 
-
                 # episode is over, record it
-                self.episode_rewards.append((timestep, total_r))
-                print((n, ep_length, total_r))
+                training_rewards.append(self.task.get_return())
+                print((n, 't', traj, self.task.get_return()))
+
+            self.training_episode_rewards.append(training_rewards)
+
+            # 2. train for 16 epochs
+            value_rmse, mean_obj = self.agent.train(16)
+            self.value_rmse.append(value_rmse)
+            self.mean_obj.append(mean_obj)
+            print(n, 'l', value_rmse, mean_obj)
+
+            # 3. gather greedy evaluation trajectories every 50 training episodes
+            if n % 50 / self.agent.actor_count >= 1:
                 continue
 
-                # calculate behavior entropy
-                total_actions = n_left + n_right
-                p_left = n_left / total_actions
-                p_right = n_right / total_actions
-                if p_left == 0 or p_right == 0:
-                    entropy = 0.
-                else:
-                    entropy = -np.log2(p_left)*p_left + -np.log2(p_right)*p_right
-                self.episode_behavior_entropy.append((timestep, entropy))
-                n_left = 0
-                n_right = 0
+            eval_rewards = []
+            eval_lengths = []
+            for i in range(100):
+                s = self.task.reset()
+                t = False
 
-                # calculate running average
-                if n >= 100:
-                    mean_reward = np.mean(self.episode_rewards[-100:], axis=0)[1]
-                    if self.best_100_episode_return is None or mean_reward > self.best_100_episode_return:
-                        self.best_100_episode_return = mean_reward
-                        self.best_weights = self.agent.Q_network.keras_network.get_weights()
-                    if not n % 100:
-                        print('mean reward for episode', n-100, 'to', n, mean_reward)
-                        print('best is', self.best_100_episode_return)
+                while not t:
+                    a = self.agent.act(s, traj, temp=0)
 
-            value_rmse, mean_obj = self.agent.train(16)
-            print(value_rmse, mean_obj)
+                    s2, r, t, _ = self.task.step(a)
+                    s = s2
+
+                    if render and i == 0:
+                        self.task.render()
+
+                # episode is over, record it
+                eval_rewards.append(self.task.get_return())
+                print((n, 'e', i, self.task.get_return()))
+
+            self.eval_episode_rewards.append(eval_rewards)
+
+            # maintain best stats
+            if self.best_100_episode_return is None or np.mean(eval_rewards) > self.best_100_episode_return:
+                self.best_100_episode_return = np.mean(eval_rewards)
+                self.best_weights = self.agent.get_weights()
+            print('cycle', n, 'mean eval:', np.mean(eval_rewards), 'best:', self.best_100_episode_return)
+            self.save_trace()
 
         # everything is done!
         self.save_trace()

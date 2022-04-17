@@ -8,7 +8,7 @@ debug_plot_values = False
 debug_print_action_calc = False
 
 class AdvantageAgent:
-    def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence):
+    def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence, entropy_weight):
         self.rng = rng
 
         self.actor_count = actor_count
@@ -20,7 +20,7 @@ class AdvantageAgent:
         self.discount_factor = discount_factor
         self.stoch_persistence = stoch_persistence
 
-        self.beta_entropy_weight = 0
+        self.beta_entropy_weight = entropy_weight
         self.minibatch_size = 128
         self.use_tqdm = False
 
@@ -35,7 +35,7 @@ class AdvantageAgent:
 
         self.experience_buffer = [experience_store.NStepTDBuffer(self.obs_shape, self.action_shape, self.t_max, self.discount_factor) for _ in range(self.actor_count)]
 
-    def act(self, obs, actor=0, greedy=False):
+    def act(self, obs, actor=0, temp=1):
         if self.rng.random() > self.stoch_persistence:
             self.stoch_mode_t[actor] = self.rng.random(self.action_shape)
             self.stoch_gauss_t[actor] = self.rng.random(self.action_shape)
@@ -60,11 +60,8 @@ class AdvantageAgent:
         sel_means = np.squeeze(np.take_along_axis(means, sel_mode, axis=-1), axis=-1)
         sel_stdevs = np.squeeze(np.take_along_axis(stdevs, sel_mode, axis=-1), axis=-1)
 
-        if greedy:
-            sel_actions = sel_means
         # this is the quantile formula of the Gaussian distribution
-        else:
-            sel_actions = sel_means + sel_stdevs * self.stoch_gauss_inverf[actor]
+        sel_actions = sel_means + temp * sel_stdevs * self.stoch_gauss_inverf[actor]
 
         if actor == 0 and debug_print_action_calc:
             print(self.stoch_mode_t[actor])
@@ -276,3 +273,6 @@ class AdvantageAgent:
         # print(self.Q_network.keras_network(np.linspace(-1, 1, 11).reshape(-1, 1)))
 
         return value_rmse, mean_obj
+
+    def get_weights(self):
+        return self.policy_network.keras_network.get_weights(), self.value_network.keras_network.get_weights()

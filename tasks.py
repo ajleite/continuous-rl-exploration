@@ -101,18 +101,22 @@ class PongTask:
 class CartPoleTask:
     def __init__(self, rng):
         import render_cartpole
-        # self.cartpole_env = gym.make("CartPole-v1")
-        self.cartpole_env = render_cartpole.ContinuousCartPoleEnv()
+        self.cartpole_env = gym.make("InvertedPendulumMuJoCoEnv-v0")
         self.cartpole_env.seed(int(rng.integers(2**63-1)))
         self.obs_shape = (4,)
         self.action_shape = (1,)
+        self.ts = 0
     def reset(self):
+        self.ts = 0
         return self.cartpole_env.reset()
     def step(self, action):
         o, r, t, _ = self.cartpole_env.step(action)
-        return o, r, t, _
+        self.ts += 1
+        return o, -1. if t and self.ts != 1000 else 0., t, _
     def render(self):
         return self.cartpole_env.render()
+    def get_return(self):
+        return self.ts
 
 class TrivialTask:
     def __init__(self, rng):
