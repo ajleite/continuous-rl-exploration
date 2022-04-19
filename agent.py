@@ -47,7 +47,7 @@ class AdvantageAgent:
         pre_means = output[..., 1]
         pre_stdevs = output[..., 2]
 
-        softmax_weights = np.exp(weights) / np.sum(np.exp(weights), axis=-1)
+        softmax_weights = np.exp(weights) / np.sum(np.exp(weights), axis=-1, keepdims=True)
 
         means = np.clip(pre_means, -1, 1)
 
@@ -92,7 +92,7 @@ class AdvantageAgent:
 
         # want to get the PDF of each real action in each of the modes
         # this is the PDF formula of the Gaussian distribution
-        mode_PDFs = tf.exp(-0.5 * ((means - actions) / stdevs)**2) / (stdevs * np.sqrt(2*np.pi))
+        mode_PDFs = tf.exp(-0.5 * ((means - tf.expand_dims(actions, axis=-1)) / stdevs)**2) / (stdevs * np.sqrt(2*np.pi))
 
         # take the weighted average over modes to get the probability of each coordinate of each action
         weighted_PDF = tf.reduce_sum(softmax_weights * mode_PDFs, axis=-1)+0.0001
@@ -157,7 +157,7 @@ class AdvantageAgent:
 
     @tf.function
     def train_iter(self, S, A, R):
-        cur_value = self.value_network.apply(S)
+        cur_value = self.value_network.apply(S)[:,0]
         adv = R - cur_value
 
         log_prob_actions = self.log_prob_actions(S, A)
@@ -201,15 +201,16 @@ class AdvantageAgent:
         all_S2 = np.concatenate(all_S2, axis=0)
 
         if debug_plot_values:
-            init_pred_R = np.array(self.value_network.apply(all_S2))
+            init_pred_R = np.array(self.value_network.apply(all_S))
 
         terminal = (all_dt == 0)
 
         # use TD to estimate the total (short-term + long-term) expected reward
         if not np.all(terminal):
-            all_R = np.where(terminal, all_R, all_R + self.discount_factor ** all_dt * np.array(self.value_network.apply(all_S2)))
+            all_R = np.where(terminal, all_R, all_R + self.discount_factor ** all_dt * np.array(self.value_network.apply(all_S2))[:,0])
+            all_R = np.float32(all_R)
         del all_dt
-        # del all_S2
+        del all_S2
 
         total_training_samples = all_S.shape[0]
         num_minibatches = (total_training_samples * epochs) // self.minibatch_size
@@ -259,7 +260,7 @@ class AdvantageAgent:
             plt.scatter(theta, omega, c=init_pred_R)
             plt.colorbar()
 
-            final_pred_R = np.array(self.value_network.apply(all_S2))
+            final_pred_R = np.array(self.value_network.apply(all_S))
 
             plt.subplot(1, 3, 3)
             plt.scatter(theta, omega, c=final_pred_R)

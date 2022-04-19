@@ -71,8 +71,8 @@ class NStepTDBuffer:
             dt_complete = np.zeros(t_max, dtype=np.int32)
             dt = np.concatenate([dt_incomplete, dt_complete], axis=0)
 
-            s2_incomplete = observations[t_max:]
-            s2_complete = np.zeros_like(observations[:trajectory_length - t_max])
+            s2_incomplete = observations[:trajectory_length - t_max]
+            s2_complete = np.zeros_like(observations[trajectory_length - t_max:])
             s2 = np.concatenate([s2_incomplete, s2_complete], axis=0)
 
         # store the trajectory in the buffer
