@@ -24,7 +24,7 @@ def test_REINFORCE_cartpole(seed):
     value_network = network.Network(task.obs_shape, network.FFANN_factory([40, 20]), 0.0001, False, task.action_shape, 1)
     ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.95, 0.965, 0)
 
-    sim = simulation.Simulation(ag, task, 4000)
+    sim = simulation.Simulation(ag, task, 4000, path)
     sim.run(False)
 
 
@@ -41,7 +41,7 @@ def test_A2C_cartpole(seed):
     value_network = network.Network(task.obs_shape, network.FFANN_factory([40, 20]), 0.0001, False, task.action_shape, 3)
     ag = agent.AdvantageAgent(agent_rng, 25, policy_network, value_network, 0, 0.95, 0.965, 0.05)
 
-    sim = simulation.Simulation(ag, task, 160)
+    sim = simulation.Simulation(ag, task, 160, path)
     sim.run(False)
 
 
@@ -58,7 +58,7 @@ def test_A2CTD_cartpole(seed):
     value_network = network.Network(task.obs_shape, network.FFANN_factory([100, 50]), 0.001, False, task.action_shape, 3)
     ag = agent.AdvantageAgent(agent_rng, 10, policy_network, value_network, 8, 0.99, 0.965, 0.05)
 
-    sim = simulation.Simulation(ag, task, 400)
+    sim = simulation.Simulation(ag, task, 400, path)
     sim.run(False)
 
 
@@ -75,7 +75,7 @@ def test_REINFORCE_cheetah(seed):
     value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.0001, False, task.action_shape, 1)
     ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.99, 0.965, 0)
 
-    sim = simulation.Simulation(ag, task, 2500)
+    sim = simulation.Simulation(ag, task, 2500, path)
     sim.run(False)
 
 if __name__ == '__main__':
