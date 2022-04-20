@@ -95,7 +95,16 @@ class HalfCheetahVAETask:
             self.vae.generator_net.load_weights('out/cheetah_gen.tfdat')
     def reset(self):
         self.cumulative_r = 0
-        return self.env.reset()
+        self.env.reset()
+
+        if self.no_state:
+            obs = np.zeros(self.obs_shape)
+        else:
+            vis_obs = self.env.render('rgb_array')
+            obs = self.vae.sample_latent(vis_obs)
+
+        return obs
+
     def step(self, action):
         _, r, t, _ = self.env.step(action)
 

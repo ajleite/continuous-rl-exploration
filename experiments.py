@@ -128,6 +128,38 @@ def gen_random_cheetah_rollouts(seed):
     np.save('out/half_cheetah_images.npy', task.get_samples())
 
 
+def test_REINFORCE_cheetah_VAE(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.HalfCheetahVAETask(task_rng)
+
+    path = f'out/REINFORCE-cheetahVAE-{seed}.pickle'
+
+    # expected time to switch action distribution is 10 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.99, 0.931, 0)
+
+    sim = simulation.Simulation(ag, task, 2500, path)
+    sim.run(False)
+
+
+def test_A2C_cheetah_VAE(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.HalfCheetahVAETask(task_rng)
+
+    path = f'out/A2C-cheetahVAE-{seed}.pickle'
+
+    # expected time to switch action distribution is 20 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 10, policy_network, value_network, 0, 0.99, 0.931, 0.05)
+
+    sim = simulation.Simulation(ag, task, 250, path)
+    sim.run(False)
 
 if __name__ == '__main__':
     for i in range(20):
