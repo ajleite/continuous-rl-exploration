@@ -117,6 +117,8 @@ class HalfCheetahVAETask:
         return self.env.reset()
     def step(self, action):
         _, r, t, _ = self.env.step(action)
+        self.env._render_width = 96
+        self.env._render_height = 96
         vis_obs = self.env.render('rgb_array')
         self.im_buffer[self.im_buffer_i] = vis_obs
         self.im_buffer_i += 1
