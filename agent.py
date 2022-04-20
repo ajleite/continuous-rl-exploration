@@ -31,6 +31,9 @@ class RandomAgent:
     def train(self, epochs=1):
         return np.array(0.), np.array(0.)
 
+    def get_weights(self):
+        return None
+
 class AdvantageAgent:
     def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence, entropy_weight):
         self.rng = rng
