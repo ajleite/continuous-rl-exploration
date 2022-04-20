@@ -62,6 +62,23 @@ def test_A2CTD_cartpole(seed):
     sim.run(False)
 
 
+def test_REINFORCE_trivial(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.TrivialContinuousTask(task_rng)
+
+    path = f'out/REINFORCE-trivial-{seed}.pickle'
+
+    # expected time to switch action distribution is 20 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.0001, True, task.action_shape, 1)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.0001, False, task.action_shape, 1)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.9, 0.965, 0)
+
+    sim = simulation.Simulation(ag, task, 2500, path)
+    sim.run(False)
+
+
 def test_REINFORCE_cheetah(seed):
     agent_rng = np.random.default_rng(seed)
     task_rng = np.random.default_rng(seed+234579672983459873)
@@ -71,20 +88,33 @@ def test_REINFORCE_cheetah(seed):
     path = f'out/REINFORCE-cheetah-{seed}.pickle'
 
     # expected time to switch action distribution is 20 timesteps
-    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.0001, True, task.action_shape, 1)
-    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.0001, False, task.action_shape, 1)
-    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.99, 0.965, 0)
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, True, task.action_shape, 1)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, False, task.action_shape, 1)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.9, 0.965, 0)
+
+    sim = simulation.Simulation(ag, task, 2500, path)
+    sim.run(False)
+
+
+def test_A2C_cheetah(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.HalfCheetahTask(task_rng)
+
+    path = f'out/A2C-cheetah-{seed}.pickle'
+
+    # expected time to switch action distribution is 20 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 20, policy_network, value_network, 0, 0.9, 0.965, 0)
 
     sim = simulation.Simulation(ag, task, 2500, path)
     sim.run(False)
 
 if __name__ == '__main__':
-    for i in range(20):
-        test_REINFORCE_cartpole(i)
-        test_A2C_cartpole(i)
-
     for i in range(5):
-        test_REINFORCE_cheetah(i)
+        test_REINFORCE_trivial(i)
 
     import sys
     a = sys.argv[1]

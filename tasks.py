@@ -32,71 +32,25 @@ def preprocess(image):
 
     return new_image
 
-class PongTask:
+class TrivialContinuousTask:
     def __init__(self, rng):
-        self.pong_env = gym.make('PongNoFrameskip-v0')
-        self.obs_buffer = [None, None, None]
-        self.obs_index = -3
-        self.points = 0
-        self.rng = rng
-        self.real_reset()
-    def real_reset(self):
-        self.obs_index = -3
-        self.points = 0
-
-        self.pong_env.seed(int(self.rng.integers(2**31)))
-        raw_obs = self.pong_env.reset()
-        obs = preprocess(downscale(raw_obs))
-        self.obs_buffer[self.obs_index] = obs
-        self.obs_index += 1
-
-        return np.concatenate([obs, obs], axis=2)
-
+        self.obs_shape = (2,)
+        self.action_shape = self.obs_shape
     def reset(self):
-        if self.obs_index >= 0:
-            self.obs_buffer[0] = self.obs_buffer[self.obs_index-1]
-            self.obs_index = -3
-        return np.concatenate([self.obs_buffer[0], self.obs_buffer[0]], axis=2)
-
+        self.value = np.random.random(size=self.obs_shape)*2-1
+        self.cumulative_r = 0
+        self.ts = 0
+        return self.value.copy()
     def step(self, action):
-        if action == 0:
-            action = 2
-        else:
-            action = 5
-        raw_obs, reward, terminal, info = self.pong_env.step(action)
-
-        if terminal:
-            if not reward:
-                if self.points < 0:
-                    reward = -1.
-                else:
-                    reward = 1.
-    
-            combined_obs = self.real_reset()
-        else:
-            obs = preprocess(downscale(raw_obs))
-
-            if self.obs_index < 0:
-                old_obs = self.obs_buffer[0]
-            else:
-                old_obs = self.obs_buffer[self.obs_index]
-
-            self.obs_buffer[self.obs_index] = obs
-            self.obs_index += 1
-            if self.obs_index >= 3:
-                self.obs_index = 0
-
-            combined_obs = np.concatenate([obs, old_obs], axis=2)
-
-            if reward:
-                terminal = 1
-                self.points += reward
-
-        return combined_obs, reward, terminal, info
+        self.value += action*0.01 + np.random.normal(size=self.obs_shape)*0.05
+        r = -np.sum(self.value*self.value)
+        self.cumulative_r += r
+        self.ts += 1
+        return self.value.copy(), r, self.ts == 200, None
     def render(self):
-        view = self.pong_env.render()
-
-
+        print(f'State {self.ts}: {self.value}')
+    def get_return(self):
+        return self.cumulative_r
 
 class CartPoleTask:
     def __init__(self, rng):
@@ -121,16 +75,47 @@ class CartPoleTask:
 class HalfCheetahTask:
     def __init__(self, rng):
         self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
-        # self.env.render('human')
+        self.env.render('human')
         self.env.seed(int(rng.integers(2**63-1)))
         self.obs_shape = (17,)
         self.action_shape = (6,)
         self.cumulative_r = 0
+        self.timestep = 0
+    def reset(self):
+        self.cumulative_r = 0
+        self.timestep = 0
+        return self.env.reset()
+    def step(self, action):
+        o, r, t, _ = self.env.step(action)
+        self.timestep += 1
+        self.cumulative_r += r
+        return o, r, t, _
+    def render(self):
+        return self.env.render('human')
+    def get_return(self):
+        return self.cumulative_r
+
+class HalfCheetahVAETask:
+    def __init__(self, rng):
+        self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
+        self.env.seed(int(rng.integers(2**63-1)))
+        self.obs_shape = (10,)
+        self.action_shape = (6,)
+        self.cumulative_r = 0
+        self.im_buffer = np.zeros((1024, 96, 96, 3))
+        self.im_buffer_i = 0
     def reset(self):
         self.cumulative_r = 0
         return self.env.reset()
     def step(self, action):
-        o, r, t, _ = self.env.step(action)
+        _, r, t, _ = self.env.step(action)
+        vis_obs_unscaled = self.env.render('rgb_array')
+        vis_obs_scaled = tf.image.resize(obs_unscaled, [92, 92]).numpy()
+        self.im_buffer[self.im_buffer_i] = vis_obs_scaled
+        self.im_buffer_i += 1
+        if self.im_buffer_i == self.im_buffer.shape[0]:
+            self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
+
         self.cumulative_r += r
         return o, r, t, _
     def render(self):

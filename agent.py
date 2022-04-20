@@ -32,6 +32,8 @@ class AdvantageAgent:
         self.stoch_gauss_t = self.rng.random((self.actor_count,) + self.action_shape)
         # this is a prominent term in the Gaussian quantile formula, precomputed for efficiency
         self.stoch_gauss_inverf = np.sqrt(2) * scipy.special.erfinv(2 * self.stoch_gauss_t - 1)
+        # this is a normalization factor to bias exploration down with high-dimensional actions
+        self.stdev_norm = np.prod(self.action_shape)
 
         self.experience_buffer = [experience_store.NStepTDBuffer(self.obs_shape, self.action_shape, self.t_max, self.discount_factor) for _ in range(self.actor_count)]
 
@@ -51,11 +53,11 @@ class AdvantageAgent:
 
         means = np.clip(pre_means, -1, 1)
 
-        # this is the formula for the sigmoid function
-        stdevs = 1/(1 + np.exp(pre_stdevs))+0.0001
+        # this is the formula for the sigmoid function, with certain biases added
+        stdevs = 1/(1 + np.exp(pre_stdevs))/self.stdev_norm+0.0001
 
         cum_weights = np.cumsum(softmax_weights, axis=-1)
-        sel_mode = np.argmax(self.stoch_mode_t[actor] < cum_weights, axis=-1, keepdims=True)
+        sel_mode = np.argmax(np.expand_dims(self.stoch_mode_t[actor], axis=-1) < cum_weights, axis=-1, keepdims=True)
 
         sel_means = np.squeeze(np.take_along_axis(means, sel_mode, axis=-1), axis=-1)
         sel_stdevs = np.squeeze(np.take_along_axis(stdevs, sel_mode, axis=-1), axis=-1)
@@ -88,7 +90,7 @@ class AdvantageAgent:
 
         means = tf.clip_by_value(pre_means, -1, 1)
 
-        stdevs = tf.nn.sigmoid(pre_stdevs)+0.0001
+        stdevs = tf.nn.sigmoid(pre_stdevs)/self.stdev_norm+0.0001
 
         # want to get the PDF of each real action in each of the modes
         # this is the PDF formula of the Gaussian distribution
@@ -121,7 +123,7 @@ class AdvantageAgent:
         weights = outputs[..., 0]
         pre_means = outputs[..., 1]
         pre_stdevs = outputs[..., 2]
-        stdevs = tf.nn.sigmoid(pre_stdevs)+0.0001
+        stdevs = tf.nn.sigmoid(pre_stdevs)/self.stdev_norm+0.0001
 
         means = tf.clip_by_value(pre_means, -1, 1)
 
@@ -249,22 +251,16 @@ class AdvantageAgent:
         mean_obj = np.array(total_obj) / total_training_samples / epochs
 
         if debug_plot_values:
-            # map them onto the ring
-            theta, omega = all_S[..., 2], all_S[..., 3]
-
             import matplotlib.pyplot as plt
             plt.subplot(1, 3, 1)
-            plt.scatter(theta, omega, c=all_R)
-            plt.colorbar()
+            plt.plot(all_R)
             plt.subplot(1, 3, 2)
-            plt.scatter(theta, omega, c=init_pred_R)
-            plt.colorbar()
+            plt.plot(init_pred_R)
 
             final_pred_R = np.array(self.value_network.apply(all_S))
 
             plt.subplot(1, 3, 3)
-            plt.scatter(theta, omega, c=final_pred_R)
-            plt.colorbar()
+            plt.plot(final_pred_R)
             plt.show()
 
         # if self.target_Q_network_update_rate:
