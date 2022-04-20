@@ -64,6 +64,9 @@ class AdvantageAgent:
 
         self.experience_buffer = [experience_store.NStepTDBuffer(self.obs_shape, self.action_shape, self.t_max, self.discount_factor) for _ in range(self.actor_count)]
 
+    def get_weights(self):
+        return self.policy_network.keras_network.get_weights(), self.value_network.keras_network.get_weights()
+
     def act(self, obs, actor=0, temp=1):
         if self.rng.random() > self.stoch_persistence:
             self.stoch_mode_t[actor] = self.rng.random(self.action_shape)
@@ -290,13 +293,4 @@ class AdvantageAgent:
             plt.plot(final_pred_R)
             plt.show()
 
-        # if self.target_Q_network_update_rate:
-        #     total_target_update = 1 - (1-self.target_Q_network_update_rate)**total_training_samples
-        #     self.target_Q_network.copy_from(self.Q_network, amount=total_target_update)
-
-        # print(self.Q_network.keras_network(np.linspace(-1, 1, 11).reshape(-1, 1)))
-
         return value_rmse, mean_obj
-
-    def get_weights(self):
-        return self.policy_network.keras_network.get_weights(), self.value_network.keras_network.get_weights()

@@ -1,14 +1,5 @@
 import numpy as np
 
-import util
-
-# Unfortunately, it is not reasonable to use a single programmatical method for both the Monte Carlo trajectory buffer and the TD(0) experience buffer,
-# but the two methods can share an interface.
-
-# The buffers expect observations to be float32s normalized to the range [0, 1].
-# Please note that the buffers receive int32 action indices as input,
-# but produce one-hot encodings corresponding to these indices as output.
-
 class NStepTDBuffer:
     def __init__(self, obs_shape, action_shape, t_max, discount_factor, buffer_size=10000):
         self.S_samples = np.zeros((buffer_size,)+obs_shape, dtype=np.float32)
@@ -36,7 +27,7 @@ class NStepTDBuffer:
             whose shapes align along their first axis (timestep axis).
 
             - observations should be a float32 array whose subsequent axes match obs_shape.
-            - actions should be an int32 array with no subsequent axes.
+            - actions should be a float32 array whose subsequent axes match action_shape.
             - rewards should be a float32 array with no subsequent axis,
               and it should represent the rewards for the transitions
               following the (observation, action) pairs in the corresponding indices. '''

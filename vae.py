@@ -190,7 +190,7 @@ def make_default_vae(image_shape=(96, 96, 3), latent_dim=32):
 
     return VAE(sample_inference_conv_layers, sample_generator_deconv_layers, image_shape, latent_dim)
 
-if __name__ == '__main__':
+def train_cheetah_VAE():
     states = np.load('out/half_cheetah_images.npy')
     np.random.seed(15)
     np.random.shuffle(states)
@@ -214,3 +214,6 @@ if __name__ == '__main__':
 
     vae.inference_net.save_weights('out/cheetah_inf.tfdat')
     vae.generator_net.save_weights('out/cheetah_gen.tfdat')
+
+if __name__ == '__main__':
+    train_cheetah_VAE()
