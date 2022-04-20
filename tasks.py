@@ -73,10 +73,12 @@ class CartPoleTask:
         return self.ts
 
 class HalfCheetahTask:
-    def __init__(self, rng):
+    def __init__(self, rng, to_render=False):
         self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
-        self.env.render('human')
+        if to_render:
+            self.env.render('human')
         self.env.seed(int(rng.integers(2**63-1)))
+
         self.obs_shape = (17,)
         self.action_shape = (6,)
         self.cumulative_r = 0
@@ -89,7 +91,7 @@ class HalfCheetahTask:
         o, r, t, _ = self.env.step(action)
         self.timestep += 1
         self.cumulative_r += r
-        return o, r, t, _
+        return o, r, t or self.timestep == 500, _
     def render(self):
         return self.env.render('human')
     def get_return(self):

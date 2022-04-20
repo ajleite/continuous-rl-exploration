@@ -87,10 +87,10 @@ def test_REINFORCE_cheetah(seed):
 
     path = f'out/REINFORCE-cheetah-{seed}.pickle'
 
-    # expected time to switch action distribution is 20 timesteps
-    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, True, task.action_shape, 1)
-    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, False, task.action_shape, 1)
-    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.9, 0.965, 0)
+    # expected time to switch action distribution is 10 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.9, 0.931, 0)
 
     sim = simulation.Simulation(ag, task, 2500, path)
     sim.run(False)
@@ -129,10 +129,10 @@ def gen_random_cheetah_rollouts(seed):
 
 
 if __name__ == '__main__':
-    gen_random_cheetah_rollouts(0)
+    # gen_random_cheetah_rollouts(0)
 
     for i in range(5):
-        test_REINFORCE_trivial(i)
+        test_REINFORCE_cheetah(i)
 
     import sys
     a = sys.argv[1]
