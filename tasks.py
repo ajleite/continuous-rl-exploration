@@ -118,7 +118,7 @@ class HalfCheetahVAETask:
     def step(self, action):
         _, r, t, _ = self.env.step(action)
 
-        if (not self.no_state) or random.random() < 0.1:
+        if (not self.no_state) or self.rng.random() < 0.1:
             vis_obs = self.env.render('rgb_array')
 
             if self.no_state:
