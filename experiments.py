@@ -112,7 +112,25 @@ def test_A2C_cheetah(seed):
     sim = simulation.Simulation(ag, task, 2500, path)
     sim.run(False)
 
+
+def gen_random_cheetah_rollouts(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.HalfCheetahVAETask(task_rng)
+
+    # expected time to switch action distribution is 20 timesteps
+    ag = agent.RandomAgent(agent_rng, 1, task.action_shape, 0.965)
+
+    sim = simulation.Simulation(ag, task, 250)
+    sim.run(True)
+
+    np.save('half_cheetah_images.npy', task.get_samples())
+
+
 if __name__ == '__main__':
+    gen_random_cheetah_rollouts(0)
+
     for i in range(5):
         test_REINFORCE_trivial(i)
 

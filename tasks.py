@@ -34,7 +34,7 @@ def preprocess(image):
 
 class TrivialContinuousTask:
     def __init__(self, rng):
-        self.obs_shape = (2,)
+        self.obs_shape = (6,)
         self.action_shape = self.obs_shape
     def reset(self):
         self.value = np.random.random(size=self.obs_shape)*2-1
@@ -97,9 +97,12 @@ class HalfCheetahTask:
 
 class HalfCheetahVAETask:
     def __init__(self, rng):
+        import vae
+        self.vae = vae.make_default_vae(latent_dim=8)
+
         self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
         self.env.seed(int(rng.integers(2**63-1)))
-        self.obs_shape = (10,)
+        self.obs_shape = (self.vae.latent_dim,)
         self.action_shape = (6,)
         self.cumulative_r = 0
         self.im_buffer = np.zeros((1024, 96, 96, 3))
@@ -110,18 +113,23 @@ class HalfCheetahVAETask:
     def step(self, action):
         _, r, t, _ = self.env.step(action)
         vis_obs_unscaled = self.env.render('rgb_array')
-        vis_obs_scaled = tf.image.resize(obs_unscaled, [92, 92]).numpy()
+        import tensorflow as tf
+        vis_obs_scaled = tf.image.resize(vis_obs_unscaled, [96, 96]).numpy()
         self.im_buffer[self.im_buffer_i] = vis_obs_scaled
         self.im_buffer_i += 1
         if self.im_buffer_i == self.im_buffer.shape[0]:
             self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
 
+        obs = self.vae.sample_latent(vis_obs_scaled)
+
         self.cumulative_r += r
-        return o, r, t, _
+        return obs, r, t, _
     def render(self):
-        return self.cartpole_env.render()
+        return self.env.render()
     def get_return(self):
         return self.cumulative_r
+    def get_samples(self):
+        return self.im_buffer[:self.im_buffer_i]
 
 class TrivialTask:
     def __init__(self, rng):

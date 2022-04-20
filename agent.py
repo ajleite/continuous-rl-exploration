@@ -7,6 +7,30 @@ import experience_store
 debug_plot_values = False
 debug_print_action_calc = False
 
+class RandomAgent:
+    def __init__(self, rng, actor_count, action_shape, stoch_persistence):
+        self.rng = rng
+
+        self.actor_count = actor_count
+
+        self.stoch_persistence = stoch_persistence
+
+        self.action_shape = action_shape
+
+        self.cur_action = self.rng.normal(size=(self.actor_count,) + self.action_shape)
+
+    def act(self, obs, actor=0, temp=1):
+        if self.rng.random() > self.stoch_persistence:
+            self.cur_action[actor] = self.rng.normal(size=self.action_shape)
+
+        return self.cur_action[actor]
+
+    def store(self, actor, obs, action, reward, terminal):
+        pass
+
+    def train(self, epochs=1):
+        return np.array(0.), np.array(0.)
+
 class AdvantageAgent:
     def __init__(self, rng, actor_count, policy_network, value_network, t_max, discount_factor, stoch_persistence, entropy_weight):
         self.rng = rng
