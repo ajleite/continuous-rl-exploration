@@ -102,6 +102,9 @@ class HalfCheetahVAETask:
 
         self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
         self.env.seed(int(rng.integers(2**63-1)))
+        self.env._render_width = 96
+        self.env._render_height = 96
+
         self.obs_shape = (self.vae.latent_dim,)
         self.action_shape = (6,)
         self.cumulative_r = 0
@@ -114,10 +117,8 @@ class HalfCheetahVAETask:
         return self.env.reset()
     def step(self, action):
         _, r, t, _ = self.env.step(action)
-        vis_obs_unscaled = self.env.render('rgb_array')
-        import tensorflow as tf
-        vis_obs_scaled = tf.image.resize(vis_obs_unscaled, [96, 96]).numpy()
-        self.im_buffer[self.im_buffer_i] = vis_obs_scaled
+        vis_obs = self.env.render('rgb_array')
+        self.im_buffer[self.im_buffer_i] = vis_obs
         self.im_buffer_i += 1
         if self.im_buffer_i == self.im_buffer.shape[0]:
             self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
@@ -125,7 +126,7 @@ class HalfCheetahVAETask:
         if self.no_state:
             obs = np.zeros(self.obs_shape)
         else:
-            obs = self.vae.sample_latent(vis_obs_scaled)
+            obs = self.vae.sample_latent(vis_obs)
 
         self.cumulative_r += r
         return obs, r, t, _

@@ -122,7 +122,7 @@ def gen_random_cheetah_rollouts(seed):
     # expected time to switch action distribution is 20 timesteps
     ag = agent.RandomAgent(agent_rng, 1, task.action_shape, 0.965)
 
-    sim = simulation.Simulation(ag, task, 250)
+    sim = simulation.Simulation(ag, task, 100)
     sim.run(True)
 
     np.save('half_cheetah_images.npy', task.get_samples())
