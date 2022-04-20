@@ -45,17 +45,6 @@ class Network:
     def apply(self, S):
         return self.keras_network(S)
 
-    @tf.function
-    def fit(self, S, A, Q):
-        Q_predicted = self.apply(S, A)
-        # tf.print(S[0], A[0], Q[0], Q_predicted[0])
-        Q_loss = tf.reduce_sum((Q_predicted - Q) ** 2)
-
-        Q_gradient = tf.gradients(Q_loss, self.keras_network.weights)
-        self.optimizer.apply_gradients(zip(Q_gradient, self.keras_network.weights))
-
-        return Q_loss
-
     def copy_from(self, other, amount):
         for self_w, other_w in zip(self.keras_network.weights, other.keras_network.weights):
             self_w.assign(self_w*(1-amount) + other_w*amount)
