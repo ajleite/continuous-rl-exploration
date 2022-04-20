@@ -117,11 +117,15 @@ class HalfCheetahVAETask:
         return self.env.reset()
     def step(self, action):
         _, r, t, _ = self.env.step(action)
-        vis_obs = self.env.render('rgb_array')
-        self.im_buffer[self.im_buffer_i] = vis_obs
-        self.im_buffer_i += 1
-        if self.im_buffer_i == self.im_buffer.shape[0]:
-            self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
+
+        if (not self.no_state) or random.random() < 0.1:
+            vis_obs = self.env.render('rgb_array')
+
+            if self.no_state:
+                self.im_buffer[self.im_buffer_i] = vis_obs
+                self.im_buffer_i += 1
+                if self.im_buffer_i == self.im_buffer.shape[0]:
+                    self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
 
         if self.no_state:
             obs = np.zeros(self.obs_shape)
