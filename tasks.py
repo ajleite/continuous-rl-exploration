@@ -100,6 +100,8 @@ class HalfCheetahVAETask:
         import vae
         self.vae = vae.make_default_vae(latent_dim=8)
 
+        self.rng = rng
+
         self.env = gym.make("HalfCheetahMuJoCoEnv-v0")
         self.env.seed(int(rng.integers(2**63-1)))
         self.env.env._render_width = 96
