@@ -128,37 +128,18 @@ def gen_random_cheetah_rollouts(seed):
     np.save('out/half_cheetah_images.npy', task.get_samples())
 
 
+
 if __name__ == '__main__':
-    # gen_random_cheetah_rollouts(0)
+    for i in range(20):
+        test_REINFORCE_cartpole(i)
+        test_A2C_cartpole(i)
 
     for i in range(5):
         test_REINFORCE_cheetah(i)
         test_A2C_cheetah(i)
 
-    import sys
-    a = sys.argv[1]
-    t = sys.argv[2]
-    seed = int(sys.argv[3])
-    if len(sys.argv) > 4 and sys.argv[4] == '-r':
-        replay = True
-    else:
-        replay = False
+    gen_random_cheetah_rollouts(0)
 
-    if t == 'pong':
-        tas = pong_config
-    elif t == 'pong-conv':
-        tas = lambda rng: pong_config(rng, boring_network=True)
-    elif t == 'cartpole':
-        tas = cart_pole_config
-    else:
-        print('invalid task')
-        sys.exit()
-
-    if a == 'MC':
-        test_MC_Agent(seed, tas, replay=replay)
-    elif a == 'FQI':
-        test_FQI_Agent(seed, tas)
-    elif a == 'DQN':
-        test_DQN_Agent(seed, tas)
-    else:
-        print('invalid agent')
+    for i in range(5):
+        test_REINFORCE_cheetah_VAE(i)
+        test_A2C_cheetah_VAE(i)
