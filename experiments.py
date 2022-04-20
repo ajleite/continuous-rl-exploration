@@ -105,9 +105,9 @@ def test_A2C_cheetah(seed):
     path = f'out/A2C-cheetah-{seed}.pickle'
 
     # expected time to switch action distribution is 20 timesteps
-    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, True, task.action_shape, 3)
-    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00005, False, task.action_shape, 3)
-    ag = agent.AdvantageAgent(agent_rng, 10, policy_network, value_network, 0, 0.9, 0.931, 0.05)
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0.00001, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 10, policy_network, value_network, 0, 0.99, 0.931, 0.05)
 
     sim = simulation.Simulation(ag, task, 250, path)
     sim.run(False)
@@ -133,6 +133,7 @@ if __name__ == '__main__':
 
     for i in range(5):
         test_REINFORCE_cheetah(i)
+        test_A2C_cheetah(i)
 
     import sys
     a = sys.argv[1]
