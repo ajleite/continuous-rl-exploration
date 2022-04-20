@@ -96,7 +96,7 @@ class HalfCheetahTask:
         return self.cumulative_r
 
 class HalfCheetahVAETask:
-    def __init__(self, rng):
+    def __init__(self, rng, no_state=False):
         import vae
         self.vae = vae.make_default_vae(latent_dim=8)
 
@@ -107,6 +107,8 @@ class HalfCheetahVAETask:
         self.cumulative_r = 0
         self.im_buffer = np.zeros((1024, 96, 96, 3))
         self.im_buffer_i = 0
+
+        self.no_state = no_state
     def reset(self):
         self.cumulative_r = 0
         return self.env.reset()
@@ -120,7 +122,10 @@ class HalfCheetahVAETask:
         if self.im_buffer_i == self.im_buffer.shape[0]:
             self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
 
-        obs = self.vae.sample_latent(vis_obs_scaled)
+        if self.no_state:
+            obs = np.zeros(self.obs_shape)
+        else:
+            obs = self.vae.sample_latent(vis_obs_scaled)
 
         self.cumulative_r += r
         return obs, r, t, _

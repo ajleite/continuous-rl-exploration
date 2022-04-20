@@ -117,7 +117,7 @@ def gen_random_cheetah_rollouts(seed):
     agent_rng = np.random.default_rng(seed)
     task_rng = np.random.default_rng(seed+234579672983459873)
 
-    task = tasks.HalfCheetahVAETask(task_rng)
+    task = tasks.HalfCheetahVAETask(task_rng, no_state=True)
 
     # expected time to switch action distribution is 20 timesteps
     ag = agent.RandomAgent(agent_rng, 1, task.action_shape, 0.965)
