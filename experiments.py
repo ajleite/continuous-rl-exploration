@@ -119,8 +119,8 @@ def gen_random_cheetah_rollouts(seed):
 
     task = tasks.HalfCheetahVAETask(task_rng, no_state=True)
 
-    # expected time to switch action distribution is 20 timesteps
-    ag = agent.RandomAgent(agent_rng, 1, task.action_shape, 0.965)
+    # expected time to switch action distribution is 10 timesteps
+    ag = agent.RandomAgent(agent_rng, 1, task.action_shape, 0.931)
 
     sim = simulation.Simulation(ag, task, 100)
     sim.run(True)
