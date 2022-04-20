@@ -125,7 +125,7 @@ def gen_random_cheetah_rollouts(seed):
     sim = simulation.Simulation(ag, task, 100)
     sim.run(True)
 
-    np.save('half_cheetah_images.npy', task.get_samples())
+    np.save('out/half_cheetah_images.npy', task.get_samples())
 
 
 if __name__ == '__main__':

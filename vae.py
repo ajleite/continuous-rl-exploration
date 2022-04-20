@@ -191,10 +191,13 @@ def make_default_vae(image_shape=(96, 96, 3), latent_dim=32):
     return VAE(sample_inference_conv_layers, sample_generator_deconv_layers, image_shape, latent_dim)
 
 if __name__ == '__main__':
-    states = np.load('ants.1.npy')
-    states = states.reshape([-1] + list(sample_image_shape))
+    states = np.load('out/half_cheetah_images.npy')
     np.random.seed(15)
     np.random.shuffle(states)
+    states = np.uint8(states)
+    # print(states.shape)
+    # print(states[0])
+    # states = state[:50000]
     # import matplotlib.pyplot as plt
     # plt.imshow(states[0])
     # plt.show()
@@ -203,17 +206,11 @@ if __name__ == '__main__':
 
     minibatch = 256
 
-    # shape should be (50000, 32, 32, 3)
     training_dataset = tf.data.Dataset.from_tensor_slices(states).batch(minibatch)
 
-    # vae.inference_net.load_weights('states3_inference.tfdat')
-    # vae.generator_net.load_weights('states3_generator.tfdat')
-    vae = VAE(sample_inference_conv_layers, sample_generator_deconv_layers, sample_image_shape, 32)
-    vae.inference_net.load_weights('ant_inf1.tfdat')
-    vae.generator_net.load_weights('ant_gen1.tfdat')
-    sample(vae, training_dataset)
+    vae = make_default_vae(latent_dim=8)
     train(vae, training_dataset, states[:10])
-    sample(vae, training_dataset)
+    # sample(vae, training_dataset)
 
-    vae.inference_net.save_weights('ant_inf2.tfdat')
-    vae.generator_net.save_weights('ant_gen2.tfdat')
+    vae.inference_net.save_weights('out/cheetah_inf.tfdat')
+    vae.generator_net.save_weights('out/cheetah_gen.tfdat')

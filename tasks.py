@@ -112,10 +112,15 @@ class HalfCheetahVAETask:
         self.obs_shape = (self.vae.latent_dim,)
         self.action_shape = (6,)
         self.cumulative_r = 0
-        self.im_buffer = np.zeros((1024, 96, 96, 3))
-        self.im_buffer_i = 0
 
         self.no_state = no_state
+
+        if self.no_state:
+            self.im_buffer = np.zeros((1024, 96, 96, 3))
+            self.im_buffer_i = 0
+        else:
+            self.vae.inference_net.load_weights('out/cheetah_inf.tfdat')
+            self.vae.generator_net.load_weights('out/cheetah_gen.tfdat')
     def reset(self):
         self.cumulative_r = 0
         return self.env.reset()
