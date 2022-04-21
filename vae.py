@@ -65,9 +65,8 @@ class VAE:
         ''' Sampling-based approach that gets means and standard deviations
             from inference(sample), then per batch item uses a single std normal
             sample to pick a vector for the generator to use.
-            (This may result in unexpected gradients for the std deviation term;
-            I need to think more about that.
-            Should we sample more than one random vector per sample?) '''
+            (With small batches and no momentum, this can result in unexpected
+            gradients for the std deviation term. Fortunately, we are using Adam here.) '''
         if sample.dtype == tf.uint8:
             sample = tf.cast(sample, 'float32')/255
         latent_info = self.inference_net(sample)

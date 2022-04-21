@@ -70,7 +70,7 @@ class HalfCheetahTask:
         return self.cumulative_r
 
 class HalfCheetahVAETask:
-    def __init__(self, rng, no_state=False):
+    def __init__(self, rng, gen_images=False):
         import vae
         self.vae = vae.make_default_vae(latent_dim=8)
 
@@ -85,9 +85,9 @@ class HalfCheetahVAETask:
         self.action_shape = (6,)
         self.cumulative_r = 0
 
-        self.no_state = no_state
+        self.gen_images = gen_images
 
-        if self.no_state:
+        if self.gen_images:
             self.im_buffer = np.zeros((1024, 96, 96, 3))
             self.im_buffer_i = 0
         else:
@@ -97,7 +97,7 @@ class HalfCheetahVAETask:
         self.cumulative_r = 0
         self.env.reset()
 
-        if self.no_state:
+        if self.gen_images:
             obs = np.zeros(self.obs_shape)
         else:
             vis_obs = self.env.render('rgb_array')
@@ -108,16 +108,16 @@ class HalfCheetahVAETask:
     def step(self, action):
         _, r, t, _ = self.env.step(action)
 
-        if (not self.no_state) or self.rng.random() < 0.1:
+        if (not self.gen_images) or self.rng.random() < 0.1:
             vis_obs = self.env.render('rgb_array')
 
-            if self.no_state:
+            if self.gen_images:
                 self.im_buffer[self.im_buffer_i] = vis_obs
                 self.im_buffer_i += 1
                 if self.im_buffer_i == self.im_buffer.shape[0]:
                     self.im_buffer = np.concatenate([self.im_buffer, np.zeros((1024, 96, 96, 3))], axis=0)
 
-        if self.no_state:
+        if self.gen_images:
             obs = np.zeros(self.obs_shape)
         else:
             obs = self.vae.sample_latent(vis_obs)
