@@ -4,9 +4,6 @@ import numpy as np
 import scipy.stats as st
 
 import matplotlib.pyplot as plt
-plt.rcParams['text.usetex'] = True
-
-import experiments
 
 
 def last_n_average(values, n):
@@ -23,12 +20,6 @@ def load_records(condition, seeds):
     for s in seeds:
         records.append(pickle.load(open(f'out/{condition}-{s}.pickle', 'rb')))
     return records
-
-def timesteps_to_episode(timesteps, episodes):
-    timesteps = np.array(timesteps)
-    episode_indices = np.array([0]+[ts for ts, _ in episodes])
-
-    return np.digitize(timesteps, episode_indices, right=True)
 
 def plot_training_curves(records, suptitle='Training progress', out_fn=None):
     training_returns = [[np.mean(r) for r in record['training_episode_rewards']] for record in records]
@@ -49,7 +40,7 @@ def plot_training_curves(records, suptitle='Training progress', out_fn=None):
     for i, title, x_axis, runs in zip([1,2,3,4], ['On-policy return', 'Greedy return', 'Value loss (RMSE)', 'Mean objective'], [training_episode_numbers, eval_episode_numbers, training_episode_numbers, training_episode_numbers], [training_returns, evaluation_returns, value_rmse, mean_obj]):
         if not (runs is training_returns and training_cycle_length != 1 or runs is evaluation_returns):
             runs = [last_n_average(run, 100) for run in runs]
-            title = title+' (running mean)'
+            # title = title+' (running mean)'
 
         plt.subplot(2,2,i)
         plt.title(title)
@@ -61,7 +52,7 @@ def plot_training_curves(records, suptitle='Training progress', out_fn=None):
 
             plt.fill_between(x_axis, run_l, run_h, color='black', alpha=0.25)
             plt.plot(x_axis, run_l, color='black', lw=0.5, ls='--')
-            plt.plot(x_axis, run_h, color='black', lw=0.5, ls='--', label='95\\% c.i.')
+            plt.plot(x_axis, run_h, color='black', lw=0.5, ls='--', label='95% c.i.')
 
         label = (i == 2)
         for run in runs:
