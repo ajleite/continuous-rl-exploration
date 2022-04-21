@@ -113,6 +113,26 @@ def test_A2C_cheetah(seed):
     sim.run(False)
 
 
+def replay_REINFORCE_cheetah(seed):
+    agent_rng = np.random.default_rng(seed)
+    task_rng = np.random.default_rng(seed+234579672983459873)
+
+    task = tasks.HalfCheetahTask(task_rng, to_render=True, max_timestep=1000)
+
+    path = f'out/REINFORCE-cheetah-{seed}.pickle'
+
+    # expected time to switch action distribution is 10 timesteps
+    policy_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0, True, task.action_shape, 3)
+    value_network = network.Network(task.obs_shape, network.FFANN_factory([160, 80]), 0, False, task.action_shape, 3)
+    ag = agent.AdvantageAgent(agent_rng, 1, policy_network, value_network, 0, 0.99, 0.931, 0)
+
+    weights = pickle.load(open(path,'rb'))['best_weights']
+    ag.set_weights(weights)
+
+    sim = simulation.Simulation(ag, task, 0)
+    sim.run(False)
+
+
 def gen_random_cheetah_rollouts(seed):
     agent_rng = np.random.default_rng(seed)
     task_rng = np.random.default_rng(seed+234579672983459873)

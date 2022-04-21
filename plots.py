@@ -42,6 +42,10 @@ def plot_training_curves(records, suptitle='Training progress', out_fn=None):
             runs = [last_n_average(run, 100) for run in runs]
             # title = title+' (running mean)'
 
+        run_length = np.min([len(run) for run in runs])
+        runs = [run[:run_length] for run in runs]
+        x_axis = x_axis[:run_length]
+
         plt.subplot(2,2,i)
         plt.title(title)
 

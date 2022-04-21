@@ -67,6 +67,10 @@ class AdvantageAgent:
     def get_weights(self):
         return self.policy_network.keras_network.get_weights(), self.value_network.keras_network.get_weights()
 
+    def set_weights(self, weights):
+        self.policy_network.keras_network.set_weights(weights[0])
+        self.value_network.keras_network.set_weights(weights[1])
+
     def act(self, obs, actor=0, temp=1):
         if self.rng.random() > self.stoch_persistence:
             self.stoch_mode_t[actor] = self.rng.random(self.action_shape)
