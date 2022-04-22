@@ -1,0 +1,2 @@
+model_checkpoint_path: "cheetah_gen.tfdat"
+all_model_checkpoint_paths: "cheetah_gen.tfdat"
